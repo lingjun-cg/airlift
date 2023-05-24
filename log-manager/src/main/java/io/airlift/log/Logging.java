@@ -16,6 +16,9 @@
 package io.airlift.log;
 
 import com.google.common.collect.ImmutableSortedMap;
+import org.crac.Context;
+import org.crac.Core;
+import org.crac.Resource;
 
 import javax.annotation.concurrent.GuardedBy;
 
@@ -26,10 +29,13 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.UncheckedIOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.logging.Handler;
 import java.util.logging.LogManager;
@@ -44,6 +50,7 @@ import static com.google.common.collect.Maps.fromProperties;
  * System.out and System.err are assigned to loggers named "stdout" and "stderr", respectively.
  */
 public class Logging
+        implements Resource
 {
     private static final Logger log = Logger.get(Logging.class);
     private static final String ROOT_LOGGER_NAME = "";
@@ -57,6 +64,9 @@ public class Logging
     @GuardedBy("this")
     private OutputStreamHandler consoleHandler;
 
+    private List<LogFileConfigForCR> logConfigForCR = new ArrayList<>();
+    private List<RollingFileHandler> fileHandlerForCR = new ArrayList<>();
+
     /**
      * Sets up default logging:
      * <p>
@@ -69,6 +79,7 @@ public class Logging
     {
         if (instance == null) {
             instance = new Logging();
+            Core.getGlobalContext().register(instance);
         }
 
         return instance;
@@ -117,6 +128,8 @@ public class Logging
 
         RollingFileHandler rollingFileHandler = new RollingFileHandler(logPath, maxHistory, maxSizeInBytes);
         ROOT.addHandler(rollingFileHandler);
+        logConfigForCR.add(new LogFileConfigForCR(logPath, maxHistory, maxSizeInBytes));
+        fileHandlerForCR.add(rollingFileHandler);
     }
 
     public Level getRootLevel()
@@ -187,6 +200,29 @@ public class Logging
         return levels.build();
     }
 
+    @Override
+    public void beforeCheckpoint(Context<? extends Resource> context) throws Exception
+    {
+        if (fileHandlerForCR.isEmpty()) {
+            return;
+        }
+        fileHandlerForCR.forEach((h) -> h.close());
+        fileHandlerForCR.clear();
+    }
+
+    @Override
+    public void afterRestore(Context<? extends Resource> context) throws Exception
+    {
+        if (logConfigForCR.isEmpty()) {
+            return;
+        }
+        for (LogFileConfigForCR config : logConfigForCR) {
+            RollingFileHandler rollingFileHandler = new RollingFileHandler(config.logPath, config.maxHistory, config.maxSizeInBytes);
+            ROOT.addHandler(rollingFileHandler);
+        }
+        logConfigForCR.clear();
+    }
+
     public void configure(LoggingConfiguration config)
     {
         if (config.getLogPath() != null) {
@@ -204,6 +240,39 @@ public class Logging
             catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
+        }
+    }
+
+    private static class LogFileConfigForCR
+    {
+        private String logPath;
+        private int maxHistory;
+        private long maxSizeInBytes;
+
+        public LogFileConfigForCR(String logPath, int maxHistory, long maxSizeInBytes)
+        {
+            this.logPath = logPath;
+            this.maxHistory = maxHistory;
+            this.maxSizeInBytes = maxSizeInBytes;
+        }
+
+        @Override
+        public boolean equals(Object o)
+        {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            LogFileConfigForCR that = (LogFileConfigForCR) o;
+            return maxHistory == that.maxHistory && maxSizeInBytes == that.maxSizeInBytes && Objects.equals(logPath, that.logPath);
+        }
+
+        @Override
+        public int hashCode()
+        {
+            return Objects.hash(logPath, maxHistory, maxSizeInBytes);
         }
     }
 }
