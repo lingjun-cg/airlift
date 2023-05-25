@@ -206,21 +206,23 @@ public class Logging
         if (fileHandlerForCR.isEmpty()) {
             return;
         }
-        fileHandlerForCR.forEach((h) -> h.close());
+
+        fileHandlerForCR.forEach((h) -> {
+            h.close();
+            ROOT.removeHandler(h);
+        });
         fileHandlerForCR.clear();
     }
 
     @Override
     public void afterRestore(Context<? extends Resource> context) throws Exception
     {
-        if (logConfigForCR.isEmpty()) {
-            return;
-        }
         for (LogFileConfigForCR config : logConfigForCR) {
             RollingFileHandler rollingFileHandler = new RollingFileHandler(config.logPath, config.maxHistory, config.maxSizeInBytes);
             ROOT.addHandler(rollingFileHandler);
+            //record for checkpoint again if checkpoint more than once and checkpoint failed.
+            fileHandlerForCR.add(rollingFileHandler);
         }
-        logConfigForCR.clear();
     }
 
     public void configure(LoggingConfiguration config)
