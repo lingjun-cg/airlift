@@ -29,6 +29,9 @@ import io.airlift.tracetoken.TraceTokenManager;
 import io.airlift.units.DataSize;
 import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.Response;
+import org.crac.Context;
+import org.crac.Core;
+import org.crac.Resource;
 
 import java.io.File;
 import java.io.IOException;
@@ -38,7 +41,7 @@ import static io.airlift.http.server.HttpRequestEvent.createHttpRequestEvent;
 import static io.airlift.units.DataSize.Unit.MEGABYTE;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
-class DelimitedRequestLog
+class DelimitedRequestLog implements Resource
 {
     private static final Logger log = Logger.get(DelimitedRequestLog.class);
     private static final String TEMP_FILE_EXTENSION = ".tmp";
@@ -121,6 +124,7 @@ class DelimitedRequestLog
         triggeringPolicy.start();
         fileAppender.start();
         asyncAppender.start();
+        Core.getGlobalContext().register(this);
     }
 
     public void log(
@@ -177,6 +181,16 @@ class DelimitedRequestLog
                 }
             }
         }
+    }
+
+    @Override
+    public void beforeCheckpoint(Context<? extends Resource> context) throws Exception {
+        asyncAppender.stop();
+    }
+
+    @Override
+    public void afterRestore(Context<? extends Resource> context) throws Exception {
+        asyncAppender.start();
     }
 
     private static class FlushingFileAppender<T>
