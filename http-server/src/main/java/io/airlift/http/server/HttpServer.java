@@ -53,6 +53,9 @@ import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
 import org.weakref.jmx.Managed;
 import org.weakref.jmx.Nested;
+import org.crac.Context;
+import org.crac.Core;
+import org.crac.Resource;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
@@ -85,7 +88,7 @@ import static java.util.Comparator.naturalOrder;
 import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.Executors.newSingleThreadScheduledExecutor;
 
-public class HttpServer
+public class HttpServer implements Resource
 {
     public enum ClientCertificate
     {
@@ -101,6 +104,12 @@ public class HttpServer
     private ConnectionStats httpsConnectionStats;
     private ScheduledExecutorService scheduledExecutorService;
     private Optional<SslContextFactory.Server> sslContextFactory;
+
+    //move here for support CR
+    private ServerConnector httpConnector;
+    private ServerConnector httpsConnector;
+    private ServerConnector adminConnector;
+    private HttpServerInfo httpServerInfo;
 
     public HttpServer(HttpServerInfo httpServerInfo,
             NodeInfo nodeInfo,
@@ -135,6 +144,7 @@ public class HttpServer
         threadPool.setDetailedDump(true);
         server = new Server(threadPool);
         registerErrorHandler = config.isShowStackTrace();
+        this.httpServerInfo = httpServerInfo;
 
         this.sslContextFactory = maybeSslContextFactory;
 
@@ -171,7 +181,6 @@ public class HttpServer
         }
 
         // set up HTTP connector
-        ServerConnector httpConnector;
         if (config.isHttpEnabled()) {
             HttpConfiguration httpConfiguration = new HttpConfiguration(baseHttpConfiguration);
             // if https is enabled, set the CONFIDENTIAL and INTEGRAL redirection information
@@ -216,7 +225,6 @@ public class HttpServer
         }
 
         // set up NIO-based HTTPS connector
-        ServerConnector httpsConnector;
         if (config.isHttpsEnabled()) {
             HttpConfiguration httpsConfiguration = new HttpConfiguration(baseHttpConfiguration);
             httpsConfiguration.addCustomizer(new SecureRequestCustomizer());
@@ -253,7 +261,6 @@ public class HttpServer
         }
 
         // set up NIO-based Admin connector
-        ServerConnector adminConnector;
         if (theAdminServlet != null && config.isAdminEnabled()) {
             HttpConfiguration adminConfiguration = new HttpConfiguration(baseHttpConfiguration);
 
@@ -334,6 +341,8 @@ public class HttpServer
         }
         rootHandlers.addHandler(statsHandler);
         server.setHandler(rootHandlers);
+
+        Core.getGlobalContext().register(this);
     }
 
     private static ServletContextHandler createServletContext(Servlet theServlet,
@@ -538,5 +547,35 @@ public class HttpServer
         ServerConnector connector = new ServerConnector(server, executor, null, null, acceptors, selectors, factories);
         connector.open(channel);
         return connector;
+    }
+
+    @Override
+    public void beforeCheckpoint(Context<? extends Resource> context) throws Exception {
+        if (httpConnector != null) {
+            httpConnector.stop();
+        }
+        if (httpsConnector != null) {
+            httpsConnector.stop();
+        }
+        if (adminConnector != null) {
+            adminConnector.stop();
+        }
+    }
+
+    @Override
+    public void afterRestore(Context<? extends Resource> context) throws Exception {
+        httpServerInfo.afterRestore(context);
+        if (httpConnector != null) {
+            httpConnector.open(httpServerInfo.getHttpChannel());
+            httpConnector.start();
+        }
+        if (httpsConnector != null) {
+            httpsConnector.open(httpServerInfo.getHttpsChannel());
+            httpsConnector.start();
+        }
+        if (adminConnector != null) {
+            adminConnector.open(httpServerInfo.getAdminChannel());
+            adminConnector.start();
+        }
     }
 }

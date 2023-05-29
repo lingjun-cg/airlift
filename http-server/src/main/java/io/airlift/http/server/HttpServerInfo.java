@@ -17,6 +17,8 @@ package io.airlift.http.server;
 
 import com.google.common.annotations.VisibleForTesting;
 import io.airlift.node.NodeInfo;
+import org.crac.Context;
+import org.crac.Resource;
 
 import javax.inject.Inject;
 
@@ -30,22 +32,31 @@ import java.nio.channels.ServerSocketChannel;
 
 import static java.lang.String.format;
 
-public class HttpServerInfo
+public class HttpServerInfo implements Resource
 {
-    private final URI httpUri;
-    private final URI httpExternalUri;
-    private final URI httpsUri;
-    private final URI httpsExternalUri;
-    private final URI adminUri;
-    private final URI adminExternalUri;
+    private URI httpUri;
+    private URI httpExternalUri;
+    private URI httpsUri;
+    private URI httpsExternalUri;
+    private URI adminUri;
+    private URI adminExternalUri;
 
-    private final ServerSocketChannel httpChannel;
-    private final ServerSocketChannel httpsChannel;
-    private final ServerSocketChannel adminChannel;
+    private ServerSocketChannel httpChannel;
+    private ServerSocketChannel httpsChannel;
+    private ServerSocketChannel adminChannel;
+
+    private HttpServerConfig config;
+    private NodeInfo nodeInfo;
 
     @Inject
     public HttpServerInfo(HttpServerConfig config, NodeInfo nodeInfo)
     {
+        this.config = config;
+        this.nodeInfo = nodeInfo;
+        initChannel();
+    }
+
+    private void initChannel() {
         if (config.isHttpEnabled()) {
             httpChannel = createChannel(nodeInfo.getBindIp(), config.getHttpPort(), config.getHttpAcceptQueueSize());
             httpUri = buildUri("http", nodeInfo.getInternalAddress(), port(httpChannel));
@@ -163,5 +174,15 @@ public class HttpServerInfo
         catch (IOException e) {
             throw new UncheckedIOException(format("Failed to bind to %s:%s", address, port), e);
         }
+    }
+
+    @Override
+    public void beforeCheckpoint(Context<? extends Resource> context) throws Exception {
+        //channel closed by outer, so no need close here
+    }
+
+    @Override
+    public void afterRestore(Context<? extends Resource> context) throws Exception {
+        initChannel();
     }
 }
