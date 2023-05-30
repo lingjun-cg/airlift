@@ -18,6 +18,7 @@ package io.airlift.http.server;
 import com.google.common.annotations.VisibleForTesting;
 import io.airlift.node.NodeInfo;
 import org.crac.Context;
+import org.crac.Core;
 import org.crac.Resource;
 
 import javax.inject.Inject;
@@ -54,6 +55,7 @@ public class HttpServerInfo implements Resource
         this.config = config;
         this.nodeInfo = nodeInfo;
         initChannel();
+        Core.getGlobalContext().register(this);
     }
 
     private void initChannel() {
@@ -178,7 +180,18 @@ public class HttpServerInfo implements Resource
 
     @Override
     public void beforeCheckpoint(Context<? extends Resource> context) throws Exception {
-        //channel closed by outer, so no need close here
+        if (httpChannel != null && httpChannel.isOpen()) {
+            httpChannel.socket().close();
+            httpChannel.close();
+        }
+        if (httpsChannel != null && httpsChannel.isOpen()) {
+            httpsChannel.socket().close();
+            httpsChannel.close();
+        }
+        if (adminChannel != null && adminChannel.isOpen()) {
+            adminChannel.socket().close();
+            adminChannel.close();
+        }
     }
 
     @Override

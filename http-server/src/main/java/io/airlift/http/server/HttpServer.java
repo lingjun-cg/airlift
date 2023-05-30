@@ -553,12 +553,21 @@ public class HttpServer implements Resource
     public void beforeCheckpoint(Context<? extends Resource> context) throws Exception {
         if (httpConnector != null) {
             httpConnector.stop();
+            if (httpServerInfo.getHttpChannel() != null) {
+                httpServerInfo.getHttpChannel().socket().close();
+            }
         }
         if (httpsConnector != null) {
             httpsConnector.stop();
+            if (httpServerInfo.getHttpsChannel() != null) {
+                httpServerInfo.getHttpsChannel().socket().close();
+            }
         }
         if (adminConnector != null) {
             adminConnector.stop();
+            if (httpServerInfo.getAdminChannel() != null) {
+                httpServerInfo.getAdminChannel().socket().close();
+            }
         }
     }
 
